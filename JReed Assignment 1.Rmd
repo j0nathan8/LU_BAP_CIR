@@ -1,0 +1,175 @@
+---
+title: "JReed Assignment 1"
+author: "Jonathan Reed"
+date: "2025-04-25"
+output: html_document
+---
+
+```{r setup, include=TRUE}
+library(ggplot2)
+library(kknn)
+library(devtools) 
+library(tm) 
+library(SnowballC) 
+library(e1071) 
+library(caret) 
+library(pander) 
+source_url("https://raw.githubusercontent.com/babakrezaee/DataWrangling/master/Functions/docv_fun.R")
+data_cl <- read.csv("https://raw.githubusercontent.com/babakrezaee/MethodsCourses/master/LeidenUniv_MAQM2020/Datasets/R%26P_RezaeeAsadzadeh_MethodsCourse.csv")
+nrow(data_cl)                        
+summary(data_cl$Violent_method)
+ggplot(data_cl, aes(x = Violent_method)) +
+  geom_density(kernel = "gaussian", fill = "darkred", alpha = 0.6, adjust = 1) +
+  labs(
+    title = "Kernel Density Estimation (KDE) of Violent Method",
+    x = "Violent Method",
+    y = "Density"
+  ) +
+  theme_minimal()
+```
+
+
+
+```{r 5.2.2}
+pred = data_cl[, c( "Education_Col", "Poli_Knowledge", "Income_ID", "Age")] # I selected the response (Violent_method) and predictors (Education, political knowledge, income, age), and stored them in a new data frame called 'pred'
+Violent_method=as.numeric(data_cl$Violent_method) #converts the column to numeric format
+pred_complete=na.omit(data.frame(pred, Violent_method)) #make sure there is no missing value
+pred=pred_complete[, -ncol(pred_complete)] 
+Violent_method <- pred_complete$Violent_method #only cleaned data 
+
+mmsc <- function(x) {
+  if (all(is.na(x))) {
+    return(rep(NA, length(x)))
+  }
+  xmin <- min(x, na.rm = TRUE)
+  xmax <- max(x, na.rm = TRUE)
+  if (xmin == xmax) {
+    return(rep(0, length(x)))
+  }
+  (x - xmin) / (xmax - xmin)
+} # This is a min/max scaling function to run on my data to normalise it
+
+pred_s = as.data.frame(apply(pred_complete, 2, mmsc)) # This applies the normalisation function column-wise to the dataset
+
+
+set.seed(42) # I set the seed to 42 for reproducibility
+kv = 2:20 # These are the possible k-values my data can pick from
+ndocv = 10 # This is the number of cross-validations the algorithm will run
+
+cv_mat_5 = matrix(0, length(kv), ndocv)
+print(cv_mat_5) 
+
+for (i in 1:ndocv) {
+  cv_temp = docvknn(pred_s, Violent_method, kv, nfold = 5) # This performs 5-fold cross-validation on the normalised dataset without the response variable
+  cv_mat_5[, i] = sqrt(cv_temp / length(Violent_method)) # Root mean squared error calculation
+}
+
+cv_mean_5 = apply(cv_mat_5, 1, mean) # This calculates the average RMSE across all iterations for each K value
+
+kbest_5 = kv[which.min(cv_mean_5)] # This selects the K value associated with the minimum RMSE
+print(kbest_5)
+cat("The min value of RMSE for 5-fold cross-validation is associated with k =", kbest_5, "\n")
+
+cv_mat_10 = matrix(0, length(kv), ndocv)
+print(cv_mat_10)
+
+for (i in 1:ndocv) {
+  cv_temp = docvknn(pred_s, Violent_method, kv, nfold = 10)# This performs 10-fold cross-validation on the same data
+  cv_mat_10[, i] = sqrt(cv_temp / length(Violent_method)) # RMSE calculation as before
+}
+
+cv_mean_10 = apply(cv_mat_10, 1, mean) # This computes the mean RMSE across all 10 cross-validations for each K
+
+kbest_10 = kv[which.min(cv_mean_10)] # This selects the best K for 10-fold CV
+cat("The min value of RMSE for 10-fold cross-validation is associated with k =", kbest_10, "\n")
+
+plot(kv, cv_mean_5, xlab = "K", ylab = "RMSE", type = 'l', col = "purple", lwd = 2)
+for (i in 1:ndocv) lines(kv, cv_mat_5[, i], col = 550 + i, lwd = 0.4)
+lines(kv, cv_mean_5, col = "green", lwd = 2, lty = 2)
+title(main = "nfold = 5", font.main = 1)
+plot(kv, cv_mean_10, xlab = "K", ylab = "RMSE", type = 'l', col = "purple", lwd = 2)
+for (i in 1:ndocv) lines(kv, cv_mat_5[, i], col = 550 + i, lwd = 0.4)
+lines(kv, cv_mean_10, col = "green", lwd = 2, lty = 2)
+title(main = "nfold = 10", font.main = 1)
+
+plot(kv, cv_mean_10, xlab = "K", ylab = "RM")
+pred_complete$Violent_method = as.numeric(pred_complete$Violent_method)
+corr_data = data.frame(
+  Feature = colnames(pred_complete)[-ncol(pred_complete)],
+  Correlation = sapply(colnames(pred_complete)[-ncol(pred_complete)], 
+                       function(x) cor(pred_complete[[x]], pred_complete$Violent_method))
+)
+
+# Plot correlation of each predictor with Violent_method
+ggplot(corr_data, aes(x = reorder(Feature, Correlation), y = Correlation)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  coord_flip() + 
+  xlab("Predictor Variables") +
+  ylab("Correlation with Violent Method") +
+  ggtitle("Correlation between Predictors and Violent Method")
+#The first two graphs (nfold=5 and 10) show the RMSE for different k values (2 through h 20), with 10 cross-validation. runs represented by the thin coloured lines and their averages shown by the green dashed line. Both graphs display a U-shaped error curve, indicating an optimal k value around 6-7 where the model performs best. 
+#The third graph summarises the average performance across different k values, confirming the optimal k value is approximately 7 where the RMSE reaches its smallest value of about 0.63. 
+#The fourth graph reveals the correlation strength between each predictor and the response variable (violent methods). Income_ID shows the strongest correlation with violent methods, which indicates that socioeconomic factors (notably income) play the most significant role in predicting the target variable in my model.
+```
+
+```{r 5.3}
+
+library(tm)
+library(caret)
+library(e1071)
+tweets_data <- read.csv("https://raw.githubusercontent.com/cardiffnlp/politics-and-virality-twitter/refs/heads/main/data/annotation/en/en_900.csv", stringsAsFactors = FALSE, encoding="UTF-8")
+
+# Recode labels: If the label is 1, classify as 'positive', if it is 0, classify as 'other'
+tweets_data$sentiment <- ifelse(tweets_data$label == 1, "positive", "other")
+tweets_data$sentiment <- factor(tweets_data$sentiment)
+
+# Here I am preprocessing the text data: Converting it to lowercase, removing the numbers, and the punctuation
+corpus <- VCorpus(VectorSource(tweets_data$sentiment))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, stripWhitespace)
+
+#Here I am creating a dictionary of terms that appear at least 10 times in the training set
+dtm <- DocumentTermMatrix(corpus)
+
+# Here I am splitting the data into training and testing sets (Using an 80-20 split)
+set.seed(42)
+train_idx <- createDataPartition(tweets_data$sentiment, p=0.8, list=FALSE)
+train_data <- tweets_data[train_idx, ]
+test_data <- tweets_data[-train_idx, ]
+dtm_train <- dtm[train_idx, ]
+dtm_test <- dtm[-train_idx, ]
+
+# Here I am reducing the Document-Term Matrix to include only the frequent terms from the dictionary
+freq_terms <- findFreqTerms(dtm_train, lowfreq=10)
+dtm_train_filtered <- DocumentTermMatrix(corpus[train_idx], list(dictionary=freq_terms))
+dtm_test_filtered <- DocumentTermMatrix(corpus[-train_idx], list(dictionary=freq_terms))
+
+# Here I am converting the DTM to a format suitable for training
+convert_counts <- function(x) {ifelse(x > 0, 1, 0)}
+dtm_train_binary <- apply(dtm_train_filtered, MARGIN = 2, convert_counts)
+dtm_test_binary <- apply(dtm_test_filtered, MARGIN = 2, convert_counts)
+
+# This is the setup for the cross-validation 
+train_control <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+
+# Here I am training the Naive Bayes classifier
+set.seed(42)
+nb_model <- train(dtm_train_binary, train_data$sentiment, method="nb", trControl=train_control)
+
+# This is the script to find the model performance on the test set
+predictions <- predict(nb_model, dtm_test_binary)
+conf_matrix <- confusionMatrix(predictions, test_data$sentiment)
+print(conf_matrix)
+
+# Printing the  misclassification rate and 'other' classification rate
+misclass_rate <- 1 - sum(diag(conf_matrix$table)) / sum(conf_matrix$table)
+other_rate <- conf_matrix$table["other", "other"] / sum(conf_matrix$table[, "other"])
+
+cat("Misclassification rate:", round(misclass_rate, 2) * 100, "%\n")
+cat("Other classification rate:", round(other_rate, 2) * 100, "%\n")
+
+```
+
+#The NB model performed perfectly on this dataset, achieving 100% accuracy. The confusion matrix shows that all instances were correctly classified, with no false positive or negatives. The sensitivity and specificity for both classes were both perfect as well, meaning the model identified all positive or other tweets correctly. Also, the Kappa score of 1 means there is perfect agreement between the predicted and actual labels. The mode's precision value of 1 means that every time my model predicted 'positive' it was correct, and the recall of 1 means that all the positives were identified in the dataset.
